@@ -1,4 +1,5 @@
 import { Task, KlasaMessage } from 'klasa';
+import { roll } from 'oldschooljs/dist/util/util';
 
 import { saidYes, noOp, rand, roll, multiplyBank } from '../../lib/util';
 import { Time, Emoji, Events } from '../../lib/constants';
@@ -9,8 +10,6 @@ import Woodcutting from '../../lib/skilling/skills/woodcutting';
 import { channelIsSendable } from '../../lib/util/channelIsSendable';
 import itemID from '../../lib/util/itemID';
 import { SkillsEnum } from '../../lib/skilling/types';
-
-const WoodcuttingPet = itemID('Beaver');
 
 export default class extends Task {
 	async run({ logID, quantity, userID, channelID, duration }: WoodcuttingActivityTaskOptions) {
