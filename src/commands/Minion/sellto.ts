@@ -1,5 +1,5 @@
 import { KlasaMessage, CommandStore } from 'klasa';
-import { Util, Items } from 'oldschooljs';
+import { Util } from 'oldschooljs';
 
 import { BotCommand } from '../../lib/BotCommand';
 import cleanItemName from '../../lib/util/cleanItemName';
@@ -7,7 +7,6 @@ import { GuildMember } from 'discord.js';
 import { Events } from '../../lib/constants';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { Item, PartialItem } from 'oldschooljs/dist/meta/types';
-import { stringMatches } from '../../lib/util';
 
 const options = {
 	max: 1,
@@ -20,7 +19,7 @@ export default class extends BotCommand {
 		super(store, file, directory, {
 			cooldown: 20,
 			usage:
-				'<member:member> <price:int{1,100000000000}> <quantity:int{1,2000000}> <itemname:...string>',
+				'<member:member> <price:int{1,100000000000}> <quantity:int{1,2000000}> (item:...item)',
 			usageDelim: ' ',
 			oneAtTime: true,
 			ironCantUse: true
@@ -29,7 +28,7 @@ export default class extends BotCommand {
 
 	async run(
 		msg: KlasaMessage,
-		[buyerMember, price, quantity, itemName]: [GuildMember, number, number, string]
+		[buyerMember, price, quantity, item]: [GuildMember, number, number, Item[]]
 	) {
 		if (msg.author.isIronman) throw `Iron players can't sell items.`;
 		if (buyerMember.user.isIronman) throw `Iron players can't be sold items.`;
