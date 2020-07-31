@@ -28,7 +28,7 @@ export default class extends BotCommand {
 
 	async run(
 		msg: KlasaMessage,
-		[buyerMember, price, quantity, item]: [GuildMember, number, number, Item[]]
+		[buyerMember, price, quantity, itemArray]: [GuildMember, number, number, Item[]]
 	) {
 		if (msg.author.isIronman) throw `Iron players can't sell items.`;
 		if (buyerMember.user.isIronman) throw `Iron players can't be sold items.`;
