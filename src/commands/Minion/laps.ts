@@ -61,6 +61,8 @@ function alching(msg: KlasaMessage, tripLength: number) {
 		bankToRemove.add('Fire rune', maxCasts * 5);
 	}
 
+	if (maxCasts === 0 || bankToRemove.length === 0) return null;
+
 	return {
 		maxCasts,
 		bankToRemove,
