@@ -57,9 +57,9 @@ export default class extends BotCommand {
 			);
 		}
 
-		let tripLength = Time.Minute * tripTime;
+		let tripLength = Time.Minute * (tripTime + 15);
 
-		if (tripLength > maxTripLength) {
+		if (tripLength > maxTripLength * 2) {
 			return msg.channel.send(
 				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
 					maxTripLength
@@ -73,6 +73,8 @@ export default class extends BotCommand {
 		const itemsToRemove = new Bank();
 		// Adjust numbers to end up with average 119 drift nets
 		let oneDriftNetTime = randFloat(78, 106) * Time.Second;
+
+		oneDriftNetTime = 92 * Time.Second;
 
 		if (!msg.author.hasItemEquippedAnywhere('Flippers')) {
 			boosts.push('-50% boost for not wearing Flippers');

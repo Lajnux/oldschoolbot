@@ -1,4 +1,5 @@
-import { Time } from 'e';
+import { MessageAttachment } from 'discord.js';
+import { randInt, Time } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
 import { Item } from 'oldschooljs/dist/meta/types';
@@ -87,6 +88,34 @@ export default class extends BotCommand {
 		if (typeof quantity === 'string') {
 			name = quantity;
 			quantity = null;
+		}
+
+		if (msg.flagArgs.xphr) {
+			let str = 'Approximate XP/Hr (varies based on RNG)\n\n';
+			for (let i = 1; i < 100; i++) {
+				str += `\n---- Level ${i} ----`;
+				let results: [string, number][] = [];
+				for (const course of Agility.Courses) {
+					if (i < course.level) continue;
+					let duration = 3600000000;
+					const timePerLap = course.lapTime * Time.Second;
+					quantity = Math.floor(duration / timePerLap);
+					duration = quantity * timePerLap;
+					let lapsFailed = 0;
+					for (let t = 0; t < quantity; t++) {
+						if (randInt(1, 100) > (100 * i) / (course.level + 5)) {
+							lapsFailed += 1;
+						}
+					}
+					const xpReceived = (quantity - lapsFailed / 2) * course.xp;
+					results.push([course.name, Math.round(xpReceived / (duration / Time.Hour))]);
+				}
+				for (const [name, xp] of results.sort((a, b) => a[1] - b[1])) {
+					str += `\n${name} ${xp.toLocaleString()} XP/HR.`;
+				}
+				str += '\n\n\n';
+			}
+			return msg.channel.send({ files: [new MessageAttachment(Buffer.from(str), 'lapsXPHR.txt')] });
 		}
 
 		const course = Agility.Courses.find(course => course.aliases.some(alias => stringMatches(alias, name)));

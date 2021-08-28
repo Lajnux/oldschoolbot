@@ -1,3 +1,4 @@
+import { MessageAttachment } from 'discord.js';
 import { objectEntries, reduceNumByPercent, Time } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 
@@ -26,6 +27,39 @@ export default class extends BotCommand {
 	async run(msg: KlasaMessage) {
 		const agilityLevel = msg.author.skillLevel(SkillsEnum.Agility);
 		const minLevel = sepulchreFloors[0].agilityLevel;
+
+		if (msg.flagArgs.xphr) {
+			let str = 'Approximate XP/Hr (varies based on RNG)\n\n';
+			for (let i = minLevel; i < 100; i++) {
+				str += `\n---- Level ${i} ----`;
+				let results: [number, number][] = [];
+				let duration = 3600000000;
+				const completableFloors = sepulchreFloors.filter(floor => i >= floor.agilityLevel);
+				let lapLength = addArrayOfNumbers(completableFloors.map(floor => floor.time));
+				lapLength = reduceNumByPercent(lapLength, 10);
+				for (const [,percent] of objectEntries(sepulchreBoosts)) {
+					if (true) {
+						lapLength = reduceNumByPercent(lapLength, percent);
+					}
+				}
+				const maxLaps = Math.floor(duration / lapLength);
+				let agilityXP = 0;
+				let floors = completableFloors.map(fl => fl.number);
+				const completedFloors = sepulchreFloors.filter(fl => floors.includes(fl.number));
+				for (let i = 0; i < maxLaps; i++) {
+					for (const floor of completedFloors) {
+						agilityXP += floor.xp;
+					}
+				}
+				results.push([Math.round(agilityXP / 1000), floors.pop()!]);
+				for (const [xp, floors] of results.sort((a, b) => a[1] - b[1])) {
+					str += `\n${xp.toLocaleString()} XP/HR. Floors up to ${floors}.`;
+				}
+				str += '\n\n\n';
+			}
+			return msg.channel.send({ files: [new MessageAttachment(Buffer.from(str), 'sepulchreXPHR.txt')] });
+		}
+
 		if (agilityLevel < minLevel) {
 			return msg.channel.send(`You need atleast level ${minLevel} Agility to do the Hallowed Sepulchre.`);
 		}

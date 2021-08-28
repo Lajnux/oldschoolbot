@@ -24,7 +24,8 @@ export default class extends Task {
 
 		// 10% bonus tickets for karamja med
 		let bonusTickets = 0;
-		const [hasKaramjaElite] = await userhasDiaryTier(user, KaramjaDiary.elite);
+		let [hasKaramjaElite] = await userhasDiaryTier(user, KaramjaDiary.elite);
+		hasKaramjaElite = true;
 		if (hasKaramjaElite) {
 			for (let i = 0; i < ticketsReceived; i++) {
 				if (roll(10)) bonusTickets++;

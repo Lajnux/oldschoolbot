@@ -1,3 +1,5 @@
+import { MessageAttachment } from 'discord.js';
+import { Time, calcWhatPercent, roll } from 'e';
 import { CommandStore, KlasaMessage, KlasaUser } from 'klasa';
 import { Bank } from 'oldschooljs';
 
@@ -8,7 +10,7 @@ import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { SkillsEnum } from '../../lib/skilling/types';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { AgilityArenaActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, itemID, resolveNameBank, stringMatches } from '../../lib/util';
+import { formatDuration, itemID, reduceNumByPercent, resolveNameBank, stringMatches } from '../../lib/util';
 import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
 import chatHeadImage from '../../lib/util/chatHeadImage';
 import getOSItem from '../../lib/util/getOSItem';
@@ -87,6 +89,35 @@ export default class extends BotCommand {
 	async run(msg: KlasaMessage) {
 		const duration = msg.author.maxTripLength(Activity.AgilityArena);
 
+		if (msg.flagArgs.xphr) {
+			let str = 'Approximate XP/Hr (varies based on RNG)\n\n';
+			for (let i = 1; i < 100; i++) {
+				str += `\n---- Level ${i} ----`;
+				let results: [number, number][] = [];
+				let duration = 3600000000;
+				let timePerTicket = Time.Minute;
+				let ticketsReceived = Math.floor(duration / timePerTicket);
+				let bonusTickets = 0;
+				if (true) {
+					for (let i = 0; i < ticketsReceived; i++) {
+						if (roll(10)) bonusTickets++;
+					}
+				}
+
+				ticketsReceived += bonusTickets;
+				let agilityXP = (duration / Time.Minute) * 416;
+				agilityXP = reduceNumByPercent(agilityXP, 100 - calcWhatPercent(i, 99));
+				let xpFromTickets = determineXPFromTickets(ticketsReceived, msg.author, true);
+				const xpFromTrip = xpFromTickets + agilityXP;
+				results.push([Math.round(xpFromTrip / 1000), Math.round(agilityXP / 1000)]);
+				for (const [xp, tripxp] of results.sort((a, b) => a[1] - b[1])) {
+					str += `\n${xp.toLocaleString()} XP/HR. Only Trip XP: ${tripxp.toLocaleString()} XP/HR`;
+				}
+				str += '\n\n\n';
+			}
+			return msg.channel.send({ files: [new MessageAttachment(Buffer.from(str), 'aaXPHR.txt')] });
+		}
+
 		if (!msg.author.hasGracefulEquipped()) {
 			return msg.channel.send({
 				files: [
@@ -100,7 +131,7 @@ export default class extends BotCommand {
 
 		const boosts = [];
 
-		const [hasKaramjaElite] = await userhasDiaryTier(msg.author, KaramjaDiary.elite);
+		let [hasKaramjaElite] = await userhasDiaryTier(msg.author, KaramjaDiary.elite);
 		if (hasKaramjaElite) {
 			boosts.push('10% extra tickets for Karamja Elite diary');
 		}
