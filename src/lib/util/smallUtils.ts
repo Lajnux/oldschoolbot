@@ -1,3 +1,6 @@
+import { exec } from 'node:child_process';
+
+import { miniID, toTitleCase } from '@oldschoolgg/toolkit';
 import { ButtonBuilder, ButtonStyle } from 'discord.js';
 import { objectEntries, Time } from 'e';
 import { Bank, Items } from 'oldschooljs';
@@ -5,11 +8,11 @@ import { ItemBank } from 'oldschooljs/dist/meta/types';
 import { MersenneTwister19937, shuffle } from 'random-js';
 
 import { ClueTiers } from '../clues/clueTiers';
-import { PerkTier } from '../constants';
+import { PerkTier, projectiles } from '../constants';
 import { skillEmoji } from '../data/emojis';
+import type { Gear } from '../structures/Gear';
 import type { ArrayItemsResolved, Skills } from '../types';
 import getOSItem from './getOSItem';
-import { toTitleCase } from './toTitleCase';
 
 export function itemNameFromID(itemID: number | string) {
 	return Items.get(itemID)?.name;
@@ -174,4 +177,41 @@ export function makeAutoFarmButton() {
 		.setLabel('Auto Farm')
 		.setStyle(ButtonStyle.Secondary)
 		.setEmoji('630911040355565599');
+}
+
+export const SQL_sumOfAllCLItems = (clItems: number[]) =>
+	`NULLIF(${clItems.map(i => `COALESCE(("collectionLogBank"->>'${i}')::int, 0)`).join(' + ')}, 0)`;
+
+export const generateGrandExchangeID = () => miniID(5).toLowerCase();
+
+export function tailFile(fileName: string, numLines: number): Promise<string> {
+	return new Promise((resolve, reject) => {
+		exec(`tail -n ${numLines} ${fileName}`, (error, stdout) => {
+			if (error) {
+				reject(error);
+			} else {
+				resolve(stdout);
+			}
+		});
+	});
+}
+
+export function checkRangeGearWeapon(gear: Gear) {
+	const weapon = gear.equippedWeapon();
+	if (!weapon) return 'You have no weapon equipped.';
+	const { ammo } = gear;
+	if (!ammo) return 'You have no ammo equipped.';
+
+	const projectileCategory = objectEntries(projectiles).find(i => i[1].weapons.includes(weapon.id));
+	if (!projectileCategory) return 'You have an invalid range weapon.';
+	if (!projectileCategory[1].items.includes(ammo.item)) {
+		return `You have invalid ammo for your equipped weapon. For ${
+			projectileCategory[0]
+		}-based weapons, you can use: ${projectileCategory[1].items.map(itemNameFromID).join(', ')}.`;
+	}
+
+	return {
+		weapon,
+		ammo
+	};
 }

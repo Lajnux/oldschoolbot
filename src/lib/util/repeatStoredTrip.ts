@@ -36,6 +36,7 @@ import {
 	MahoganyHomesActivityTaskOptions,
 	MiningActivityTaskOptions,
 	MonsterActivityTaskOptions,
+	MotherlodeMiningActivityTaskOptions,
 	NexTaskOptions,
 	NightmareActivityTaskOptions,
 	OfferingActivityTaskOptions,
@@ -58,6 +59,7 @@ import {
 import { itemNameFromID } from '../util';
 import { giantsFoundryAlloys } from './../../mahoji/lib/abstracted_commands/giantsFoundryCommand';
 import { NightmareZoneActivityTaskOptions, UnderwaterAgilityThievingTaskOptions } from './../types/minions';
+import { deferInteraction } from './interactionReply';
 
 export const taskCanBeRepeated = (type: activity_type_enum) =>
 	!(
@@ -83,6 +85,10 @@ export const tripHandlers = {
 		args: () => ({})
 	},
 	[activity_type_enum.Birdhouse]: {
+		commandName: 'm',
+		args: () => ({})
+	},
+	[activity_type_enum.StrongholdOfSecurity]: {
 		commandName: 'm',
 		args: () => ({})
 	},
@@ -211,7 +217,7 @@ export const tripHandlers = {
 	},
 	[activity_type_enum.DarkAltar]: {
 		commandName: 'runecraft',
-		args: (data: DarkAltarOptions) => ({ rune: darkAltarRunes[data.rune].item.name })
+		args: (data: DarkAltarOptions) => ({ rune: `${darkAltarRunes[data.rune].item.name} (zeah)` })
 	},
 	[activity_type_enum.Runecraft]: {
 		commandName: 'runecraft',
@@ -338,6 +344,13 @@ export const tripHandlers = {
 			powermine: data.powermine
 		})
 	},
+	[activity_type_enum.MotherlodeMining]: {
+		commandName: 'mine',
+		args: (data: MotherlodeMiningActivityTaskOptions) => ({
+			name: 'Motherlode mine',
+			quantity: data.quantity
+		})
+	},
 	[activity_type_enum.MonsterKilling]: {
 		commandName: 'k',
 		args: (data: MonsterActivityTaskOptions) => {
@@ -404,7 +417,7 @@ export const tripHandlers = {
 	[activity_type_enum.PuroPuro]: {
 		commandName: 'activities',
 		args: (data: PuroPuroActivityTaskOptions) => ({
-			puro_puro: { impling: data.implingID || '', dark_lure: data.darkLure }
+			puro_puro: { implingTier: data.implingTier || '', dark_lure: data.darkLure }
 		})
 	},
 	[activity_type_enum.Questing]: {
@@ -470,7 +483,7 @@ export const tripHandlers = {
 			tob: {
 				start: {
 					hard_mode: data.hardMode,
-					max_team_size: data.users.length
+					solo: data.solo
 				}
 			}
 		})
@@ -630,6 +643,7 @@ export async function repeatTrip(
 	interaction: ButtonInteraction,
 	data: { data: Prisma.JsonValue; type: activity_type_enum }
 ) {
+	await deferInteraction(interaction);
 	const handler = tripHandlers[data.type];
 	return runCommand({
 		commandName: handler.commandName,

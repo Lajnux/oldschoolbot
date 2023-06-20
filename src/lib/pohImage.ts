@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import path from 'path';
 
 import { DUNGEON_FLOOR_Y, GROUND_FLOOR_Y, HOUSE_WIDTH, Placeholders, TOP_FLOOR_Y } from './poh';
-import { canvasImageFromBuffer } from './util/canvasUtil';
+import { canvasImageFromBuffer, loadAndCacheLocalImage } from './util/canvasUtil';
 import { getActivityOfUser } from './util/minionIsBusy';
 import { PlayerOwnedHouse } from '.prisma/client';
 
@@ -25,11 +25,9 @@ const FOLDERS = [
 	'dungeon_decoration',
 	'prison',
 	'minion',
-	'garden_decoration'
+	'garden_decoration',
+	'amulet'
 ];
-
-const bg = fs.readFileSync('./src/lib/poh/images/bg_1.jpg');
-const bg2 = fs.readFileSync('./src/lib/poh/images/bg_2.jpg');
 
 class PoHImage {
 	public imageCache: Map<number, Image> = new Map();
@@ -38,8 +36,8 @@ class PoHImage {
 	initFinished: boolean = false;
 
 	async init() {
-		this.bgImages.push(await canvasImageFromBuffer(bg));
-		this.bgImages.push(await canvasImageFromBuffer(bg2));
+		this.bgImages.push(await loadAndCacheLocalImage('./src/lib/poh/images/bg_1.jpg'));
+		this.bgImages.push(await loadAndCacheLocalImage('./src/lib/poh/images/bg_2.jpg'));
 		for (const folder of FOLDERS) {
 			const currentPath = path.join(CONSTRUCTION_IMG_DIR, folder);
 			const filesInDir = await fs.promises.readdir(currentPath);

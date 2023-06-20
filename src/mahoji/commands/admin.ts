@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { execSync } from 'node:child_process';
 import { inspect } from 'node:util';
 
 import { codeBlock } from '@discordjs/builders';
 import { ClientStorage, economy_transaction_type } from '@prisma/client';
 import { Stopwatch } from '@sapphire/stopwatch';
-import { Duration } from '@sapphire/time-utilities';
 import { isThenable } from '@sentry/utils';
 import { AttachmentBuilder, escapeCodeBlock, InteractionReplyOptions } from 'discord.js';
 import { notEmpty, randArrItem, sleep, Time, uniqueArr } from 'e';
@@ -22,12 +22,14 @@ import {
 	BadgesEnum,
 	BitField,
 	BitFieldData,
+	BOT_TYPE,
 	Channel,
 	DISABLED_COMMANDS,
 	globalConfig
 } from '../../lib/constants';
 import { generateGearImage } from '../../lib/gear/functions/generateGearImage';
 import { GearSetup } from '../../lib/gear/types';
+import { GrandExchange } from '../../lib/grandExchange';
 import { mahojiUserSettingsUpdate } from '../../lib/MUser';
 import { patreonTask } from '../../lib/patreon';
 import { runRolesTask } from '../../lib/rolesTask';
@@ -39,6 +41,7 @@ import {
 	calcPerHour,
 	cleanString,
 	convertBankToPerHourStats,
+	dateFm,
 	formatDuration,
 	sanitizeBank,
 	stringMatches,
@@ -123,6 +126,21 @@ async function unsafeEval({ userID, code }: { userID: string; code: string }) {
 **Time:** ${asyncTime ? `⏱ ${asyncTime}<${syncTime}>` : `⏱ ${syncTime}`}
 `
 	};
+}
+
+async function allEquippedPets() {
+	const pets = await prisma.$queryRawUnsafe<
+		{ pet: number; qty: number }[]
+	>(`SELECT "minion.equippedPet" AS pet, COUNT("minion.equippedPet") AS qty
+FROM users
+WHERE "minion.equippedPet" IS NOT NULL
+GROUP BY "minion.equippedPet"
+ORDER BY qty DESC;`);
+	const bank = new Bank();
+	for (const { pet, qty } of pets) {
+		bank.add(pet, qty);
+	}
+	return bank;
 }
 
 async function evalCommand(userID: string, code: string): CommandResponse {
@@ -261,6 +279,130 @@ AND ("gear.melee" IS NOT NULL OR
 					.join('\n')
 			};
 		}
+	},
+	{
+		name: 'Economy Bank',
+		run: async () => {
+			const [blowpipeRes, totalGP, result] = await prisma.$transaction([
+				prisma.$queryRawUnsafe<
+					{ scales: number; dart: number; qty: number }[]
+				>(`SELECT (blowpipe->>'scales')::int AS scales, (blowpipe->>'dartID')::int AS dart, (blowpipe->>'dartQuantity')::int AS qty
+FROM users
+WHERE blowpipe iS NOT NULL and (blowpipe->>'dartQuantity')::int != 0;`),
+				prisma.$queryRawUnsafe<{ sum: number }[]>('SELECT SUM("GP") FROM users;'),
+				prisma.$queryRawUnsafe<{ banks: ItemBank }[]>(`SELECT
+				json_object_agg(itemID, itemQTY)::jsonb as banks
+			 from (
+				select key as itemID, sum(value::bigint) as itemQTY
+				from users
+				cross join json_each_text(bank)
+				group by key
+			 ) s;`)
+			]);
+			const totalBank: ItemBank = result[0].banks;
+			const economyBank = new Bank(totalBank);
+			economyBank.add('Coins', totalGP[0].sum);
+
+			const allPets = await allEquippedPets();
+			economyBank.add(allPets);
+
+			for (const { dart, scales, qty } of blowpipeRes) {
+				economyBank.add("Zulrah's scales", scales);
+				economyBank.add(dart, qty);
+			}
+			sanitizeBank(economyBank);
+			return {
+				files: [
+					(await makeBankImage({ bank: economyBank })).file,
+					new AttachmentBuilder(Buffer.from(JSON.stringify(economyBank.bank, null, 4)), { name: 'bank.json' })
+				]
+			};
+		}
+	},
+	{
+		name: 'Equipped Pets',
+		run: async () => {
+			return allEquippedPets();
+		}
+	},
+	{
+		name: 'Most Active',
+		run: async () => {
+			const res = await prisma.$queryRawUnsafe<{ num: number; username: string }[]>(`
+SELECT sum(duration) as num, "new_user"."username", user_id
+FROM activity
+INNER JOIN "new_users" "new_user" on "new_user"."id" = "activity"."user_id"::text
+WHERE start_date > now() - interval '2 days'
+GROUP BY user_id, "new_user"."username"
+ORDER BY num DESC
+LIMIT 10;
+`);
+			return {
+				content: `Most Active Users in past 48h\n${res
+					.map((i, ind) => `${ind + 1} ${i.username}: ${formatDuration(i.num)}`)
+					.join('\n')}`
+			};
+		}
+	},
+	{
+		name: 'Grand Exchange',
+		run: async () => {
+			const settings = await GrandExchange.fetchData();
+
+			const allTx: string[][] = [];
+			const allTransactions = await prisma.gETransaction.findMany({
+				orderBy: {
+					created_at: 'desc'
+				}
+			});
+			if (allTransactions.length > 0) {
+				allTx.push(Object.keys(allTransactions[0]));
+				for (const tx of allTransactions) {
+					allTx.push(Object.values(tx).map(i => i.toString()));
+				}
+			}
+
+			const allLi: string[][] = [];
+			const allListings = await prisma.gEListing.findMany({
+				orderBy: {
+					created_at: 'desc'
+				}
+			});
+			if (allListings.length > 0) {
+				allLi.push(Object.keys(allListings[0]));
+				for (const tx of allListings) {
+					allLi.push(Object.values(tx).map(i => (i === null ? '' : i.toString())));
+				}
+			}
+
+			const buyLimitInterval = GrandExchange.getInterval();
+			return {
+				content: `**Grand Exchange Data**
+
+The next buy limit reset is at: ${buyLimitInterval.nextResetStr}, it resets every ${formatDuration(
+					GrandExchange.config.buyLimit.interval
+				)}.
+**Tax Rate:** ${GrandExchange.config.tax.rate()}%
+**Tax Cap (per item):** ${toKMB(GrandExchange.config.tax.cap())}
+**Total GP Removed From Taxation:** ${settings.totalTax.toLocaleString()} GP
+**Total Tax GP G.E Has To Spend on Item Sinks:** ${settings.taxBank.toLocaleString()} GP
+`,
+				files: [
+					(
+						await makeBankImage({
+							bank: await GrandExchange.fetchOwnedBank(),
+							title: 'Items in the G.E'
+						})
+					).file,
+					new AttachmentBuilder(Buffer.from(allTx.map(i => i.join('\t')).join('\n')), {
+						name: 'transactions.txt'
+					}),
+					new AttachmentBuilder(Buffer.from(allLi.map(i => i.join('\t')).join('\n')), {
+						name: 'listings.txt'
+					})
+				]
+			};
+		}
 	}
 ];
 
@@ -271,42 +413,8 @@ export const adminCommand: OSBMahojiCommand = {
 	options: [
 		{
 			type: ApplicationCommandOptionType.Subcommand,
-			name: 'add_patron_time',
-			description: 'Give user temporary patron time.',
-			options: [
-				{
-					type: ApplicationCommandOptionType.User,
-					name: 'user',
-					description: 'The user.',
-					required: true
-				},
-				{
-					type: ApplicationCommandOptionType.Integer,
-					name: 'tier',
-					description: 'The tier to give.',
-					required: true,
-					choices: [1, 2, 3, 4, 5, 6].map(i => ({ name: i.toString(), value: i }))
-				},
-				{
-					type: ApplicationCommandOptionType.String,
-					name: 'time',
-					description: 'The time.',
-					required: true
-				}
-			]
-		},
-		{
-			type: ApplicationCommandOptionType.Subcommand,
-			name: 'viewbank',
-			description: 'View a users bank.',
-			options: [
-				{
-					type: ApplicationCommandOptionType.User,
-					name: 'user',
-					description: 'The user.',
-					required: true
-				}
-			]
+			name: 'shut_down',
+			description: 'Shut down the bot without rebooting.'
 		},
 		{
 			type: ApplicationCommandOptionType.Subcommand,
@@ -516,11 +624,6 @@ export const adminCommand: OSBMahojiCommand = {
 		},
 		{
 			type: ApplicationCommandOptionType.Subcommand,
-			name: 'most_active',
-			description: 'Most active'
-		},
-		{
-			type: ApplicationCommandOptionType.Subcommand,
 			name: 'bitfield',
 			description: 'Manage bitfield of a user',
 			options: [
@@ -577,11 +680,11 @@ export const adminCommand: OSBMahojiCommand = {
 				}
 			]
 		},
-		{
-			type: ApplicationCommandOptionType.Subcommand,
-			name: 'wipe_bingo_temp_cls',
-			description: 'Wipe all temp cls of bingo users'
-		},
+		// {
+		// 	type: ApplicationCommandOptionType.Subcommand,
+		// 	name: 'wipe_bingo_temp_cls',
+		// 	description: 'Wipe all temp cls of bingo users'
+		// },
 		{
 			type: ApplicationCommandOptionType.Subcommand,
 			name: 'give_items',
@@ -613,8 +716,8 @@ export const adminCommand: OSBMahojiCommand = {
 		interaction,
 		guildID
 	}: CommandRunOptions<{
-		viewbank?: { user: MahojiUserOption };
 		reboot?: {};
+		shut_down?: {};
 		debug_patreon?: {};
 		eval?: { code: string };
 		sync_commands?: {};
@@ -622,7 +725,6 @@ export const adminCommand: OSBMahojiCommand = {
 		sync_blacklist?: {};
 		loot_track?: { name: string };
 		cancel_task?: { user: MahojiUserOption };
-		add_patron_time?: { user: MahojiUserOption; tier: number; time: string };
 		sync_roles?: {};
 		sync_patreon?: {};
 		add_ironman_alt?: { main: MahojiUserOption; ironman_alt: MahojiUserOption };
@@ -631,7 +733,6 @@ export const adminCommand: OSBMahojiCommand = {
 		command?: { enable?: string; disable?: string };
 		view_user?: { user: MahojiUserOption };
 		set_price?: { item: string; price: number };
-		most_active?: {};
 		bitfield?: { user: MahojiUserOption; add?: string; remove?: string };
 		ltc?: { item?: string };
 		view?: { thing: string };
@@ -880,20 +981,6 @@ export const adminCommand: OSBMahojiCommand = {
 			await syncCustomPrices();
 			return `Set the price of \`${item.name}\` to \`${price.toLocaleString()}\`.`;
 		}
-		if (options.most_active) {
-			const res = await prisma.$queryRawUnsafe<{ num: number; username: string }[]>(`
-SELECT sum(duration) as num, "new_user"."username", user_id
-FROM activity
-INNER JOIN "new_users" "new_user" on "new_user"."id" = "activity"."user_id"::text
-WHERE start_date > now() - interval '2 days'
-GROUP BY user_id, "new_user"."username"
-ORDER BY num DESC
-LIMIT 10;
-`);
-			return `Most Active Users in past 48h\n${res
-				.map((i, ind) => `${ind + 1} ${i.username}: ${formatDuration(i.num)}`)
-				.join('\n')}`;
-		}
 
 		if (options.bitfield) {
 			const bitInput = options.bitfield.add ?? options.bitfield.remove;
@@ -946,58 +1033,14 @@ LIMIT 10;
 			});
 			process.exit();
 		}
-		if (options.viewbank) {
-			const userToCheck = await mUserFetch(options.viewbank.user.user.id);
-			const bank = userToCheck.allItemsOwned;
-			return { files: [(await makeBankImage({ bank, title: userToCheck.usernameOrMention })).file] };
-		}
-
-		if (options.add_patron_time) {
-			const { tier, time, user: userToGive } = options.add_patron_time;
-			if (![1, 2, 3, 4, 5].includes(tier)) return 'Invalid input.';
-			const duration = new Duration(time);
-			const ms = duration.offset;
-			if (ms < Time.Second || ms > Time.Year * 3) return 'Invalid input.';
-			const input = await mahojiUsersSettingsFetch(userToGive.user.id, {
-				premium_balance_tier: true,
-				premium_balance_expiry_date: true,
-				id: true
+		if (options.shut_down) {
+			globalClient.isShuttingDown = true;
+			let timer = production ? Time.Second * 30 : Time.Second * 5;
+			await interactionReply(interaction, {
+				content: `Shutting down in ${dateFm(new Date(Date.now() + timer))}.`
 			});
-
-			const currentBalanceTier = input.premium_balance_tier;
-
-			if (currentBalanceTier !== null && currentBalanceTier !== tier) {
-				await handleMahojiConfirmation(
-					interaction,
-					`They already have Tier ${currentBalanceTier}; this will replace the existing balance entirely, are you sure?`
-				);
-			}
-			await handleMahojiConfirmation(
-				interaction,
-				`Are you sure you want to add ${formatDuration(ms)} of Tier ${tier} patron to ${
-					userToGive.user.username
-				}?`
-			);
-			await mahojiUserSettingsUpdate(input.id, {
-				premium_balance_tier: tier
-			});
-
-			const currentBalanceTime =
-				input.premium_balance_expiry_date === null ? null : Number(input.premium_balance_expiry_date);
-
-			let newBalanceExpiryTime = 0;
-			if (currentBalanceTime !== null && tier === currentBalanceTier) {
-				newBalanceExpiryTime = currentBalanceTime + ms;
-			} else {
-				newBalanceExpiryTime = Date.now() + ms;
-			}
-			await mahojiUserSettingsUpdate(input.id, {
-				premium_balance_expiry_date: newBalanceExpiryTime
-			});
-
-			return `Gave ${formatDuration(ms)} of Tier ${tier} patron to ${
-				userToGive.user.username
-			}. They have ${formatDuration(newBalanceExpiryTime - Date.now())} remaining.`;
+			await Promise.all([sleep(timer), GrandExchange.queue.onEmpty()]);
+			execSync(`pm2 stop ${BOT_TYPE === 'OSB' ? 'osb' : 'bso'}`);
 		}
 
 		if (options.sync_blacklist) {
@@ -1069,7 +1112,7 @@ ${guildCommands.length} Guild commands`;
 		}
 
 		if (options.give_items) {
-			const items = parseBank({ inputStr: options.give_items.items });
+			const items = parseBank({ inputStr: options.give_items.items, noDuplicateItems: true });
 			const user = await mUserFetch(options.give_items.user.user.id);
 			await handleMahojiConfirmation(
 				interaction,

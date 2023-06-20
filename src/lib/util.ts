@@ -214,16 +214,6 @@ export function formatItemCosts(consumable: Consumable, timeToFinish: number) {
 	return str.join('');
 }
 
-export function formatMissingItems(consumables: Consumable[], timeToFinish: number) {
-	const str = [];
-
-	for (const consumable of consumables) {
-		str.push(formatItemCosts(consumable, timeToFinish));
-	}
-
-	return str.join(', ');
-}
-
 export function formatPohBoosts(boosts: POHBoosts) {
 	const bonusStr = [];
 	const slotStr = [];
@@ -324,17 +314,34 @@ export function sanitizeBank(bank: Bank) {
 		}
 	}
 }
+
+export function validateBankAndThrow(bank: Bank) {
+	if (!bank || typeof bank !== 'object') {
+		throw new Error('Invalid bank object');
+	}
+	for (const [key, value] of Object.entries(bank.bank)) {
+		const pair = [key, value].join('-');
+		if (value < 1) {
+			throw new Error(`Less than 1 qty: ${pair}`);
+		}
+
+		if (!Number.isInteger(value)) {
+			throw new Error(`Non-integer value: ${pair}`);
+		}
+
+		const item = getItem(key);
+		if (!item) {
+			throw new Error(`Invalid item ID: ${pair}`);
+		}
+	}
+}
+
 export function convertBankToPerHourStats(bank: Bank, time: number) {
 	let result = [];
 	for (const [item, qty] of bank.items()) {
 		result.push(`${(qty / (time / Time.Hour)).toFixed(1)}/hr ${item.name}`);
 	}
 	return result;
-}
-
-export function truncateString(str: string, maxLen: number) {
-	if (str.length < maxLen) return str;
-	return `${str.slice(0, maxLen - 3)}...`;
 }
 
 export function removeMarkdownEmojis(str: string) {
@@ -446,20 +453,6 @@ export async function runTimedLoggedFn(name: string, fn: () => Promise<unknown>)
 
 export function dateFm(date: Date) {
 	return `${time(date, 'T')} (${time(date, 'R')})`;
-}
-
-const validChars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-
-export function miniID(length: number): string {
-	let id = '';
-
-	for (let i = 0; i < length; i++) {
-		const randomChar = validChars[Math.floor(Math.random() * validChars.length)];
-
-		id += randomChar;
-	}
-
-	return id;
 }
 
 export function getInteractionTypeName(type: InteractionType) {

@@ -1,11 +1,14 @@
+import { objectEntries } from 'e';
 import { Bank } from 'oldschooljs';
 import { ItemBank } from 'oldschooljs/dist/meta/types';
+import { convertLVLtoXP } from 'oldschooljs/dist/util';
 import { describe, expect, test } from 'vitest';
 
 import { prisma } from '../../src/lib/settings/prisma';
 import { SkillsEnum } from '../../src/lib/skilling/types';
 import { assert } from '../../src/lib/util/logError';
 import { mahojiUsersSettingsFetch } from '../../src/mahoji/mahojiSettings';
+import { createTestUser } from './util';
 
 async function stressTest(userID: string) {
 	const user = await mUserFetch(userID);
@@ -13,19 +16,19 @@ async function stressTest(userID: string) {
 	const currentGP = user.GP;
 	const gpBank = new Bank().add('Coins', currentGP);
 	async function assertGP(amnt: number) {
-		const mUser = await mahojiUsersSettingsFetch(userID);
+		const mUser = await mahojiUsersSettingsFetch(userID, { GP: true });
 		assert(Number(mUser.GP) === amnt, `1 GP should match ${amnt} === ${Number(mUser.GP)}`);
 	}
 	async function assertBankMatches() {
 		const newBank = user.bank;
-		const mUser = await mahojiUsersSettingsFetch(userID);
+		const mUser = await mahojiUsersSettingsFetch(userID, { bank: true, GP: true });
 		const mahojiBank = new Bank(mUser.bank as ItemBank);
 		assert(mahojiBank.equals(newBank), 'Mahoji bank should match');
 		assert(mahojiBank.equals(currentBank), `Updated bank should match: ${mahojiBank.difference(currentBank)}`);
 		assert(currentGP === Number(mUser.GP), `2 GP should match ${currentGP} === ${Number(mUser.GP)}`);
 	}
 	async function fetchCL() {
-		const mUser = await mahojiUsersSettingsFetch(userID);
+		const mUser = await mahojiUsersSettingsFetch(userID, { collectionLogBank: true });
 		const mahojiBank = new Bank(mUser.collectionLogBank as ItemBank);
 		return mahojiBank;
 	}
@@ -99,5 +102,24 @@ describe('MUser', () => {
 		});
 		expect(xpAdded.length).toEqual(1);
 		expect(xpAdded[0].xp).toEqual(1000);
+	});
+
+	test('skillsAsLevels/skillsAsXP', async () => {
+		const user = await createTestUser();
+		for (const [key, val] of objectEntries(user.skillsAsLevels)) {
+			let expectedVal = key === 'hitpoints' ? 10 : 1;
+			expect(val).toEqual(expectedVal);
+		}
+		for (const [key, val] of objectEntries(user.skillsAsXP)) {
+			let expectedVal = key === 'hitpoints' ? convertLVLtoXP(10) : convertLVLtoXP(1);
+			expect(val).toEqual(expectedVal);
+		}
+		await user.addXP({ skillName: SkillsEnum.Agility, amount: convertLVLtoXP(50) });
+		await user.addXP({ skillName: SkillsEnum.Attack, amount: convertLVLtoXP(50) });
+
+		expect(user.skillsAsLevels.agility).toEqual(50);
+		expect(user.skillsAsLevels.attack).toEqual(50);
+		expect(user.skillsAsXP.agility).toEqual(convertLVLtoXP(50));
+		expect(user.skillsAsXP.attack).toEqual(convertLVLtoXP(50));
 	});
 });

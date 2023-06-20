@@ -2,6 +2,7 @@ import { calcPercentOfNum, randInt } from 'e';
 import { Bank } from 'oldschooljs';
 
 import { Emoji, Events } from '../../../lib/constants';
+import addSkillingClueToLoot from '../../../lib/minions/functions/addSkillingClueToLoot';
 import Fishing from '../../../lib/skilling/skills/fishing';
 import aerialFishingCreatures from '../../../lib/skilling/skills/hunter/aerialFishing';
 import { SkillsEnum } from '../../../lib/skilling/types';
@@ -100,8 +101,8 @@ export const aerialFishingTask: MinionTask = {
 			}
 		}
 
-		await user.addXP({ skillName: SkillsEnum.Fishing, amount: fishXpReceived });
-		await user.addXP({ skillName: SkillsEnum.Hunter, amount: huntXpReceived });
+		await user.addXP({ skillName: SkillsEnum.Fishing, amount: fishXpReceived, source: 'AerialFishing' });
+		await user.addXP({ skillName: SkillsEnum.Hunter, amount: huntXpReceived, source: 'AerialFishing' });
 		await user.incrementCreatureScore(bluegill.id, bluegillCaught);
 		await user.incrementCreatureScore(commonTench.id, commonTenchCaught);
 		await user.incrementCreatureScore(mottledEel.id, mottledEelCaught);
@@ -134,6 +135,10 @@ export const aerialFishingTask: MinionTask = {
 		if (newFishLevel > currentFishLevel) {
 			str += `\n\n${user.minionName}'s Fishing level is now ${newFishLevel}!`;
 		}
+
+		// Add clue scrolls
+		const clueScrollChance = 636_833;
+		addSkillingClueToLoot(user, SkillsEnum.Fishing, quantity, clueScrollChance, loot);
 
 		// Heron Pet roll
 		const totalFishCaught = greaterSirenCaught + mottledEelCaught + commonTenchCaught + bluegillCaught;
